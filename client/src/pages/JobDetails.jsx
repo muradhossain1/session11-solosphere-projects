@@ -1,15 +1,18 @@
 import axios from 'axios'
-import { format } from 'date-fns'
-import { useEffect, useState } from 'react'
-
+import { compareAsc, format } from 'date-fns'
+import { useContext, useEffect, useState } from 'react'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
+import { AuthContext } from '../providers/AuthProvider'
+import {toast} from 'react-hot-toast'
 
 const JobDetails = () => {
+  const { user } = useContext(AuthContext)
   const [startDate, setStartDate] = useState(new Date())
   const { id } = useParams();
   const [job, setJob] = useState({});
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchJobData()
@@ -18,10 +21,53 @@ const JobDetails = () => {
   const fetchJobData = async () => {
     const { data } = await axios.get(`${import.meta.env.VITE_API_URL}/job/${id}`);
     setJob(data)
-    setStartDate(new Date(data.deadline))
+    // setStartDate(new Date(data.deadline))
   }
 
-  const { _id, title, deadline, category, buyer, description, min_price, max_price, bid_count } = job || {};
+  const { _id, title, deadline, category, buyer, description, min_price, max_price,} = job || {};
+
+  //handle form submit
+  const handleSubmitBids = async e => {
+    e.preventDefault();
+    const form = e.target;
+    const price = form.price.value
+    const email = user?.email
+    const comment = form.comment.value
+    // const deadline = startDate
+
+    // 0. Cheak bid Permission validation
+    if(user?.email === buyer?.email) {
+      return toast.error('Action not permitted!')
+    }
+    
+    // 1.Deadline crossed validation
+    if(compareAsc(new Date(), new Date(deadline)) === 1) {
+      return toast.error('DeadLine Crossed, Bidding Forbidden!')
+    }
+
+    // 2. Price within maximum price range validation
+    if(price > max_price){
+      return toast.error('Offer less or at least equal to maximum price!')
+    }
+
+    // 3. offered deadline is within sellers deadline validation 
+    if(compareAsc (new Date(startDate), new Date(deadline)) === 1) {
+      return toast.error('Offer a date with in deadline')
+    }
+    
+    const bidData = {price, email, comment, deadline: startDate, jobId: _id, title, category, status: 'Pending', buyer: buyer?.email};
+
+    try{
+      const {data} = await axios.post(`${import.meta.env.VITE_API_URL}/add-bid`, bidData);
+      form.reset();
+      console.log(data)
+      toast.success('Bid successfully!!');
+      navigate('/my-bids');
+    }catch(err){
+      toast.error(err.response.data)
+    }
+    console.log(bidData)
+  }
 
   return (
     <div className='flex flex-col md:flex-row justify-around gap-5  items-center min-h-[calc(100vh-306px)] md:max-w-screen-xl mx-auto '>
@@ -74,7 +120,7 @@ const JobDetails = () => {
           Place A Bid
         </h2>
 
-        <form>
+        <form onSubmit={handleSubmitBids}>
           <div className='grid grid-cols-1 gap-6 mt-4 sm:grid-cols-2'>
             <div>
               <label className='text-gray-700 ' htmlFor='price'>
@@ -94,6 +140,7 @@ const JobDetails = () => {
                 Email Address
               </label>
               <input
+              defaultValue={user?.email}
                 id='emailAddress'
                 type='email'
                 name='email'
